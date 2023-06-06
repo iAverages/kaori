@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"kaori/internal/config"
 	"kaori/internal/redis"
@@ -26,30 +27,24 @@ func Init(cfg *config.Config, logger *zap.SugaredLogger) *spotify.PrivateUser {
 
 	redis.Init(cfg)
 
+	auth = spotifyauth.New(
+		spotifyauth.WithRedirectURL(cfg.Hostname+"/callback"),
+		spotifyauth.WithScopes(spotifyauth.ScopeUserReadCurrentlyPlaying, spotifyauth.ScopeUserReadPlaybackState, spotifyauth.ScopeUserModifyPlaybackState),
+		spotifyauth.WithClientID(cfg.SpofityId),
+		spotifyauth.WithClientSecret(cfg.SpofitySecret),
+	)
+
 	token, err := redis.GetLastToken()
-
-	if err != nil {
-		logger.Error(err)
-	}
-
-	if err == nil && token != "" {
-		tok, err := auth.Exchange(context.Background(), token)
-		if err != nil {
-			logger.Fatal(err)
-		}
-		client = spotify.New(auth.Client(context.Background(), tok))
+	if err == nil {
+		client = spotify.New(auth.Client(context.Background(), token))
+		// Get current user to check if token is valid still
 		user, err := client.CurrentUser(context.Background())
 		if err != nil {
-			logger.Fatal(err)
+			logger.Error(err)
+			return nil
 		}
 		return user
 	} else {
-		auth = spotifyauth.New(
-			spotifyauth.WithRedirectURL(cfg.Hostname+"/callback"),
-			spotifyauth.WithScopes(spotifyauth.ScopeUserReadCurrentlyPlaying, spotifyauth.ScopeUserReadPlaybackState, spotifyauth.ScopeUserModifyPlaybackState),
-			spotifyauth.WithClientID(cfg.SpofityId),
-			spotifyauth.WithClientSecret(cfg.SpofitySecret),
-		)
 		rad, err := randutil.Alphanumeric(16)
 		if err != nil {
 			logger.Error(err)
@@ -60,20 +55,18 @@ func Init(cfg *config.Config, logger *zap.SugaredLogger) *spotify.PrivateUser {
 }
 
 func DisplayAuthURL(cfg *config.Config, logger *zap.SugaredLogger) {
-	go func() {
-		url := auth.AuthURL(state)
-		fmt.Println("Please log in to Spotify by visiting the following page in your browser:", url)
+	url := auth.AuthURL(state)
+	fmt.Println("Please log in to Spotify by visiting the following page in your browser:", url)
 
-		// wait for auth to complete
-		client = <-ch
+	// wait for auth to complete
+	client = <-ch
 
-		// use the client to make calls that require authorization
-		user, err := client.CurrentUser(context.Background())
-		if err != nil {
-			logger.Fatal(err)
-		}
-		logger.Info("user id:", user.ID)
-	}()
+	// use the client to make calls that require authorization
+	user, err := client.CurrentUser(context.Background())
+	if err != nil {
+		logger.Fatal(err)
+	}
+	logger.Info("user id:", user.ID)
 }
 
 type Song struct {
@@ -105,6 +98,14 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 	}
 
 	playerState, err := client.PlayerState(context.Background())
+	if playerState == nil {
+		logger.Error("PlayerState is nil")
+		return PlayingNow{
+			IsPlaying: false,
+			Song:      nil,
+		}
+	}
+
 	if err != nil {
 		logger.Error(err)
 		return PlayingNow{
@@ -112,20 +113,26 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 			Song:      nil,
 		}
 	}
+	if playerState.Playing && playerState.Item != nil {
+		return PlayingNow{
+			Song: &Song{
+				Artist: Artist{
+					Name: playerState.Item.Artists[0].Name,
+					Url:  playerState.Item.Artists[0].ExternalURLs["spotify"],
+				},
+				Name:     playerState.Item.Name,
+				Duration: playerState.Item.Duration,
+				Url:      playerState.Item.ExternalURLs["spotify"],
+			},
+			PlaylistUrl: playerState.PlaybackContext.ExternalURLs["spotify"],
+			IsPlaying:   playerState.Playing,
+			Progress:    playerState.Progress,
+		}
+	}
 
 	return PlayingNow{
-		Song: &Song{
-			Artist: Artist{
-				Name: playerState.Item.Artists[0].Name,
-				Url:  playerState.Item.Artists[0].ExternalURLs["spotify"],
-			},
-			Name:     playerState.Item.Name,
-			Duration: playerState.Item.Duration,
-			Url:      playerState.Item.ExternalURLs["spotify"],
-		},
-		PlaylistUrl: playerState.PlaybackContext.ExternalURLs["spotify"],
-		IsPlaying:   playerState.Playing,
-		Progress:    playerState.Progress,
+		IsPlaying: false,
+		Song:      nil,
 	}
 }
 
@@ -145,5 +152,16 @@ func Callback(w http.ResponseWriter, req bunrouter.Request) error {
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, "Authorization Complete")
 	ch <- client
+
+	json, err := json.Marshal(tok)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = redis.SaveToken(json)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return nil
 }

@@ -21,12 +21,12 @@ func LoadConfig(path string) (config Config, err error) {
 	viper.AutomaticEnv()
 
 	// Default values
-	viper.SetDefault("Port", "8080")
-	viper.SetDefault("Hostname", "http://localhost:8080")
-	viper.SetDefault("RedisHost", "localhost")
-	viper.SetDefault("RedisPort", "6379")
-	viper.SetDefault("RedisPassword", "")
-	viper.SetDefault("RedisDatabase", 0)
+	viper.SetDefault("PORT", "8080")
+	viper.SetDefault("HOSTNAME", "http://localhost:8080")
+	viper.SetDefault("REDIS_HOST", "localhost")
+	viper.SetDefault("REDIS_PORT", "6379")
+	viper.SetDefault("REDIS_PASSWORD", "")
+	viper.SetDefault("REDIS_DATABASE", 0)
 
 	err = viper.ReadInConfig()
 	if err != nil {
