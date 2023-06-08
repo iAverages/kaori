@@ -24,10 +24,33 @@ func serverIsReady(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 	}
 }
 
+func corsMiddleware(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
+	return func(w http.ResponseWriter, req bunrouter.Request) error {
+		origin := req.Header.Get("Origin")
+		if origin == "" {
+			return next(w, req)
+		}
+
+		h := w.Header()
+
+		h.Set("Access-Control-Allow-Origin", origin)
+
+		// CORS preflight.
+		if req.Method == http.MethodOptions {
+			h.Set("Access-Control-Allow-Methods", "GET")
+			h.Set("Access-Control-Allow-Headers", "content-type")
+			h.Set("Access-Control-Max-Age", "86400")
+			return nil
+		}
+
+		return next(w, req)
+	}
+}
+
 func Start(cfg *config.Config, logger *zap.SugaredLogger) {
 	logger.Info("Starting server...")
 
-	router := bunrouter.New()
+	router := bunrouter.New(bunrouter.WithMiddleware(corsMiddleware))
 
 	router.GET("/callback", spotify.Callback)
 
