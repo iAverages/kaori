@@ -57,7 +57,7 @@ func Init(cfg *config.Config, logger *zap.SugaredLogger) *spotify.PrivateUser {
 
 func DisplayAuthURL(cfg *config.Config, logger *zap.SugaredLogger) {
 	url := auth.AuthURL(state)
-	fmt.Println("Please log in to Spotify by visiting the following page in your browser:", url)
+	logger.Info("Please log in to Spotify by visiting the following page in your browser:", url)
 
 	// wait for auth to complete
 	client = <-ch
