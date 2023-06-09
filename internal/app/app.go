@@ -1,7 +1,9 @@
 package app
 
 import (
+	"kaori/internal/common"
 	"kaori/internal/config"
+	"kaori/internal/redis"
 	"kaori/internal/spotify"
 	"net/http"
 
@@ -9,16 +11,12 @@ import (
 	"go.uber.org/zap"
 )
 
-type ErrorResponse struct {
-	Message string `json:"message"`
-}
-
 var isReady = false
 
 func serverIsReady(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 	return func(w http.ResponseWriter, req bunrouter.Request) error {
 		if !isReady {
-			return bunrouter.JSON(w, ErrorResponse{Message: "Kaori not ready yet"})
+			return bunrouter.JSON(w, common.ErrorResponse{Message: "Kaori not ready yet"})
 		}
 		return next(w, req)
 	}
@@ -44,7 +42,9 @@ func corsMiddleware(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 
 func Start(cfg *config.Config, logger *zap.SugaredLogger) {
 	logger.Info("Starting server...")
-	spotifyService := spotify.NewService(logger, cfg)
+
+	redisService := redis.NewRedisService(logger, cfg)
+	spotifyService := spotify.NewSpotifyService(logger, cfg, redisService)
 
 	router := bunrouter.New(bunrouter.WithMiddleware(corsMiddleware))
 

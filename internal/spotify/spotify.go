@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"kaori/internal/common"
 	"kaori/internal/config"
 	"kaori/internal/redis"
 	"math"
@@ -26,17 +27,17 @@ var auth *spotifyauth.Authenticator
 type Service struct {
 	logger *zap.SugaredLogger
 	config *config.Config
+	rdb    redis.RedisService
 }
 
-func NewService(logger *zap.SugaredLogger, config *config.Config) *Service {
-	return &Service{logger, config}
+func NewSpotifyService(logger *zap.SugaredLogger, config *config.Config, rdb redis.RedisService) *Service {
+	return &Service{logger, config, rdb}
 }
 
 func (service *Service) Init() *spotify.PrivateUser {
 	cfg := service.config
 	logger := service.logger
-
-	redis.Init(cfg, logger)
+	rdb := service.rdb
 
 	auth = spotifyauth.New(
 		spotifyauth.WithRedirectURL(cfg.Hostname+"/callback"),
@@ -45,7 +46,7 @@ func (service *Service) Init() *spotify.PrivateUser {
 		spotifyauth.WithClientSecret(cfg.SpofitySecret),
 	)
 
-	token, err := redis.GetLastToken()
+	token, err := rdb.GetLastToken()
 	if err == nil {
 		client = spotify.New(auth.Client(context.Background(), token))
 		// Get current user to check if token is valid still
@@ -80,34 +81,7 @@ func (service *Service) DisplayAuthURL() {
 	service.logger.Info("user id:", user.ID)
 }
 
-type Song struct {
-	Artist   Artist `json:"artist,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Duration int    `json:"duration,omitempty"`
-	Url      string `json:"url,omitempty"`
-}
-
-type Artist struct {
-	Name string `json:"name,omitempty"`
-	Url  string `json:"url,omitempty"`
-}
-
-type PlayingNow struct {
-	Song        *Song     `json:"song,omitempty"`
-	IsPlaying   bool      `json:"is_playing"`
-	Progress    int       `json:"progress,omitempty"`
-	PlaylistUrl string    `json:"playlist_url,omitempty"`
-	Icon        string    `json:"icon,omitempty"`
-	Levels      []float64 `json:"levels,omitempty"`
-}
-
-type AudioAnalysis struct {
-	Start    float64 `json:"start,omitempty"`
-	Duration float64 `json:"duration,omitempty"`
-	Loudness float64 `json:"loudness,omitempty"`
-}
-
-func findSegment(segments []AudioAnalysis, i float64) *AudioAnalysis {
+func findSegment(segments []common.AudioAnalysis, i float64) *common.AudioAnalysis {
 	for _, segment := range segments {
 		if i <= segment.Start+segment.Duration {
 			return &segment
@@ -116,7 +90,7 @@ func findSegment(segments []AudioAnalysis, i float64) *AudioAnalysis {
 	return nil
 }
 
-func max(arr []AudioAnalysis) float64 {
+func max(arr []common.AudioAnalysis) float64 {
 	var max float64
 	for _, v := range arr {
 		if v.Loudness > max {
@@ -128,11 +102,11 @@ func max(arr []AudioAnalysis) float64 {
 
 func formatAnalysis(analysis *spotify.AudioAnalysis) []float64 {
 
-	var segments []AudioAnalysis
+	var segments []common.AudioAnalysis
 	duration := analysis.Track.Duration
 
 	for _, segment := range analysis.Segments {
-		segments = append(segments, AudioAnalysis{
+		segments = append(segments, common.AudioAnalysis{
 			Start:    segment.Start / float64(duration),
 			Duration: segment.Duration / float64(duration),
 			Loudness: 1 - (math.Min(math.Max(segment.LoudnessStart, -35), 0) / -35),
@@ -155,19 +129,25 @@ func formatAnalysis(analysis *spotify.AudioAnalysis) []float64 {
 	return levels
 }
 
-func (service *Service) GetCurrentSong() PlayingNow {
+func (service *Service) GetCurrentSong() common.PlayingNow {
 	if client == nil {
 		service.logger.Error("Client is nil")
-		return PlayingNow{
+		return common.PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
 		}
 	}
 
+	cache, err := service.rdb.GetSongCache()
+
+	if err == nil {
+		return cache
+	}
+
 	playerState, err := client.PlayerState(context.Background())
 	if playerState == nil {
 		service.logger.Error("PlayerState is nil")
-		return PlayingNow{
+		return common.PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
 		}
@@ -175,7 +155,7 @@ func (service *Service) GetCurrentSong() PlayingNow {
 
 	if err != nil {
 		service.logger.Error(err)
-		return PlayingNow{
+		return common.PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
 		}
@@ -188,9 +168,9 @@ func (service *Service) GetCurrentSong() PlayingNow {
 			service.logger.Error(err)
 		}
 
-		return PlayingNow{
-			Song: &Song{
-				Artist: Artist{
+		playing := common.PlayingNow{
+			Song: &common.Song{
+				Artist: common.Artist{
 					Name: playerState.Item.Artists[0].Name,
 					Url:  playerState.Item.Artists[0].ExternalURLs["spotify"],
 				},
@@ -204,9 +184,18 @@ func (service *Service) GetCurrentSong() PlayingNow {
 			Icon:        playerState.Item.Album.Images[0].URL,
 			Levels:      formatAnalysis(analysis),
 		}
+		go func() {
+			err := service.rdb.SaveSongCache(playing)
+			if err != nil {
+				service.logger.Error(err)
+			}
+		}()
+
+		return playing
+
 	}
 
-	return PlayingNow{
+	return common.PlayingNow{
 		IsPlaying: false,
 		Song:      nil,
 	}
@@ -215,8 +204,8 @@ func (service *Service) GetCurrentSong() PlayingNow {
 func (service *Service) Callback(w http.ResponseWriter, req bunrouter.Request) error {
 	tok, err := auth.Token(req.Request.Context(), state, req.Request)
 	if err != nil {
-		http.Error(w, "Couldn't get token", http.StatusForbidden)
-		service.logger.Fatal(err)
+		http.Error(w, "404 page not found", http.StatusNotFound)
+		return nil
 	}
 
 	if st := req.Request.FormValue("state"); st != state {
@@ -234,7 +223,7 @@ func (service *Service) Callback(w http.ResponseWriter, req bunrouter.Request) e
 		service.logger.Fatal(err)
 	}
 
-	err = redis.SaveToken(json)
+	err = service.rdb.SaveToken(json)
 	if err != nil {
 		service.logger.Fatal(err)
 	}
