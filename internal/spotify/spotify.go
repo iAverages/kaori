@@ -7,6 +7,7 @@ import (
 	"kaori/internal/config"
 	"kaori/internal/redis"
 	"log"
+	"math"
 	"net/http"
 
 	"github.com/uptrace/bunrouter"
@@ -82,10 +83,66 @@ type Artist struct {
 }
 
 type PlayingNow struct {
-	Song        *Song  `json:"song,omitempty"`
-	IsPlaying   bool   `json:"is_playing"`
-	Progress    int    `json:"progress,omitempty"`
-	PlaylistUrl string `json:"playlist_url,omitempty"`
+	Song        *Song     `json:"song,omitempty"`
+	IsPlaying   bool      `json:"is_playing"`
+	Progress    int       `json:"progress,omitempty"`
+	PlaylistUrl string    `json:"playlist_url,omitempty"`
+	Icon        string    `json:"icon,omitempty"`
+	Levels      []float64 `json:"levels,omitempty"`
+}
+
+type AudioAnalysis struct {
+	Start    float64 `json:"start,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
+	Loudness float64 `json:"loudness,omitempty"`
+}
+
+func findSegment(segments []AudioAnalysis, i float64) *AudioAnalysis {
+	for _, segment := range segments {
+		if i <= segment.Start+segment.Duration {
+			return &segment
+		}
+	}
+	return nil
+}
+
+func max(arr []AudioAnalysis) float64 {
+	var max float64
+	for _, v := range arr {
+		if v.Loudness > max {
+			max = v.Loudness
+		}
+	}
+	return max
+}
+
+func formatAnalysis(analysis *spotify.AudioAnalysis) []float64 {
+
+	var segments []AudioAnalysis
+	duration := analysis.Track.Duration
+
+	for _, segment := range analysis.Segments {
+		segments = append(segments, AudioAnalysis{
+			Start:    segment.Start / float64(duration),
+			Duration: segment.Duration / float64(duration),
+			Loudness: 1 - (math.Min(math.Max(segment.LoudnessStart, -35), 0) / -35),
+		})
+	}
+
+	max := max(segments)
+	var levels = []float64{}
+
+	for i := 0.000; i < 1; i += 0.001 {
+		segment := findSegment(segments, i)
+		if segment == nil {
+			levels = append(levels, 0)
+			continue
+		}
+		loudness := math.Round((segment.Loudness/max)*100) / 100
+		levels = append(levels, loudness)
+	}
+
+	return levels
 }
 
 func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
@@ -113,7 +170,14 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 			Song:      nil,
 		}
 	}
+
 	if playerState.Playing && playerState.Item != nil {
+		analysis, err := client.GetAudioAnalysis(context.Background(), playerState.Item.ID)
+
+		if err != nil {
+			logger.Error(err)
+		}
+
 		return PlayingNow{
 			Song: &Song{
 				Artist: Artist{
@@ -127,6 +191,8 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 			PlaylistUrl: playerState.PlaybackContext.ExternalURLs["spotify"],
 			IsPlaying:   playerState.Playing,
 			Progress:    playerState.Progress,
+			Icon:        playerState.Item.Album.Images[0].URL,
+			Levels:      formatAnalysis(analysis),
 		}
 	}
 
