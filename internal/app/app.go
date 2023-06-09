@@ -26,14 +26,9 @@ func serverIsReady(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 
 func corsMiddleware(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 	return func(w http.ResponseWriter, req bunrouter.Request) error {
-		origin := req.Header.Get("Origin")
-		if origin == "" {
-			return next(w, req)
-		}
-
 		h := w.Header()
 
-		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Origin", "*")
 
 		// CORS preflight.
 		if req.Method == http.MethodOptions {
