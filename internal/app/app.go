@@ -44,10 +44,11 @@ func corsMiddleware(next bunrouter.HandlerFunc) bunrouter.HandlerFunc {
 
 func Start(cfg *config.Config, logger *zap.SugaredLogger) {
 	logger.Info("Starting server...")
+	spotifyService := spotify.NewService(logger, cfg)
 
 	router := bunrouter.New(bunrouter.WithMiddleware(corsMiddleware))
 
-	router.GET("/callback", spotify.Callback)
+	router.GET("/callback", spotifyService.Callback)
 
 	group := router.NewGroup("/api").Use(serverIsReady)
 
@@ -57,13 +58,13 @@ func Start(cfg *config.Config, logger *zap.SugaredLogger) {
 	})
 
 	group.GET("/player", func(w http.ResponseWriter, req bunrouter.Request) error {
-		return bunrouter.JSON(w, spotify.GetCurrentSong(logger))
+		return bunrouter.JSON(w, spotifyService.GetCurrentSong())
 	})
 
 	go func() {
-		user := spotify.Init(cfg, logger)
+		user := spotifyService.Init()
 		if user == nil {
-			spotify.DisplayAuthURL(cfg, logger)
+			spotifyService.DisplayAuthURL()
 		} else {
 			logger.Info("You are logged in as: ", user.DisplayName, "(", user.ID, ")")
 		}

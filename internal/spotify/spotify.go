@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"kaori/internal/config"
 	"kaori/internal/redis"
-	"log"
 	"math"
 	"net/http"
 
@@ -24,9 +23,20 @@ var (
 var client *spotify.Client
 var auth *spotifyauth.Authenticator
 
-func Init(cfg *config.Config, logger *zap.SugaredLogger) *spotify.PrivateUser {
+type Service struct {
+	logger *zap.SugaredLogger
+	config *config.Config
+}
 
-	redis.Init(cfg)
+func NewService(logger *zap.SugaredLogger, config *config.Config) *Service {
+	return &Service{logger, config}
+}
+
+func (service *Service) Init() *spotify.PrivateUser {
+	cfg := service.config
+	logger := service.logger
+
+	redis.Init(cfg, logger)
 
 	auth = spotifyauth.New(
 		spotifyauth.WithRedirectURL(cfg.Hostname+"/callback"),
@@ -55,9 +65,9 @@ func Init(cfg *config.Config, logger *zap.SugaredLogger) *spotify.PrivateUser {
 	return nil
 }
 
-func DisplayAuthURL(cfg *config.Config, logger *zap.SugaredLogger) {
+func (service *Service) DisplayAuthURL() {
 	url := auth.AuthURL(state)
-	logger.Info("Please log in to Spotify by visiting the following page in your browser:", url)
+	service.logger.Info("Please log in to Spotify by visiting the following page in your browser:", url)
 
 	// wait for auth to complete
 	client = <-ch
@@ -65,9 +75,9 @@ func DisplayAuthURL(cfg *config.Config, logger *zap.SugaredLogger) {
 	// use the client to make calls that require authorization
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
-		logger.Fatal(err)
+		service.logger.Fatal(err)
 	}
-	logger.Info("user id:", user.ID)
+	service.logger.Info("user id:", user.ID)
 }
 
 type Song struct {
@@ -145,9 +155,9 @@ func formatAnalysis(analysis *spotify.AudioAnalysis) []float64 {
 	return levels
 }
 
-func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
+func (service *Service) GetCurrentSong() PlayingNow {
 	if client == nil {
-		logger.Error("Client is nil")
+		service.logger.Error("Client is nil")
 		return PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
@@ -156,7 +166,7 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 
 	playerState, err := client.PlayerState(context.Background())
 	if playerState == nil {
-		logger.Error("PlayerState is nil")
+		service.logger.Error("PlayerState is nil")
 		return PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
@@ -164,7 +174,7 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 	}
 
 	if err != nil {
-		logger.Error(err)
+		service.logger.Error(err)
 		return PlayingNow{
 			IsPlaying: false,
 			Song:      nil,
@@ -175,7 +185,7 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 		analysis, err := client.GetAudioAnalysis(context.Background(), playerState.Item.ID)
 
 		if err != nil {
-			logger.Error(err)
+			service.logger.Error(err)
 		}
 
 		return PlayingNow{
@@ -202,16 +212,16 @@ func GetCurrentSong(logger *zap.SugaredLogger) PlayingNow {
 	}
 }
 
-func Callback(w http.ResponseWriter, req bunrouter.Request) error {
+func (service *Service) Callback(w http.ResponseWriter, req bunrouter.Request) error {
 	tok, err := auth.Token(req.Request.Context(), state, req.Request)
 	if err != nil {
 		http.Error(w, "Couldn't get token", http.StatusForbidden)
-		log.Fatal(err)
+		service.logger.Fatal(err)
 	}
 
 	if st := req.Request.FormValue("state"); st != state {
 		http.NotFound(w, req.Request)
-		log.Fatalf("State mismatch: %s != %s\n", st, state)
+		service.logger.Fatalf("State mismatch: %s != %s\n", st, state)
 	}
 
 	client := spotify.New(auth.Client(req.Request.Context(), tok))
@@ -221,12 +231,12 @@ func Callback(w http.ResponseWriter, req bunrouter.Request) error {
 
 	json, err := json.Marshal(tok)
 	if err != nil {
-		log.Fatal(err)
+		service.logger.Fatal(err)
 	}
 
 	err = redis.SaveToken(json)
 	if err != nil {
-		log.Fatal(err)
+		service.logger.Fatal(err)
 	}
 
 	return nil
