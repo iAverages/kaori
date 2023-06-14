@@ -12,7 +12,7 @@ COPY internal ./internal
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o kaori ./cmd
 
-FROM alpine:3.18.0 AS app
+FROM alpine:3.18.2 AS app
 
 WORKDIR /app
 
