@@ -7,7 +7,7 @@ require (
 	github.com/spf13/viper v1.16.0
 	github.com/uptrace/bunrouter v1.0.20
 	github.com/zmb3/spotify/v2 v2.3.1
-	go.step.sm/crypto v0.32.1
+	go.step.sm/crypto v0.32.2
 	go.uber.org/zap v1.24.0
 	golang.org/x/oauth2 v0.9.0
 )
