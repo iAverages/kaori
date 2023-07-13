@@ -9,7 +9,7 @@ require (
 	github.com/zmb3/spotify/v2 v2.3.1
 	go.step.sm/crypto v0.32.3
 	go.uber.org/zap v1.24.0
-	golang.org/x/oauth2 v0.9.0
+	golang.org/x/oauth2 v0.10.0
 )
 
 require (
