@@ -38,3 +38,5 @@ yarn-error.log*
 
 # dev keys used for api
 *.key
+
+.direnv/
