@@ -162,12 +162,6 @@ func (service *Service) GetCurrentSong() common.PlayingNow {
 	}
 
 	if playerState.Playing && playerState.Item != nil {
-		analysis, err := client.GetAudioAnalysis(context.Background(), playerState.Item.ID)
-
-		if err != nil {
-			service.logger.Error(err)
-		}
-
 		playing := common.PlayingNow{
 			Song: &common.Song{
 				Artist: common.Artist{
@@ -182,7 +176,6 @@ func (service *Service) GetCurrentSong() common.PlayingNow {
 			IsPlaying:   playerState.Playing,
 			Progress:    playerState.Progress,
 			Icon:        playerState.Item.Album.Images[0].URL,
-			Levels:      formatAnalysis(analysis),
 		}
 		go func() {
 			err := service.rdb.SaveSongCache(playing)

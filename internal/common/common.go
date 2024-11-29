@@ -1,14 +1,16 @@
 package common
 
+import "github.com/zmb3/spotify/v2"
+
 type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
 type Song struct {
-	Artist   Artist `json:"artist,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Duration int    `json:"duration,omitempty"`
-	Url      string `json:"url,omitempty"`
+	Artist   Artist          `json:"artist,omitempty"`
+	Name     string          `json:"name,omitempty"`
+	Duration spotify.Numeric `json:"duration,omitempty"`
+	Url      string          `json:"url,omitempty"`
 }
 
 type Artist struct {
@@ -17,12 +19,12 @@ type Artist struct {
 }
 
 type PlayingNow struct {
-	Song        *Song     `json:"song,omitempty"`
-	IsPlaying   bool      `json:"is_playing"`
-	Progress    int       `json:"progress,omitempty"`
-	PlaylistUrl string    `json:"playlist_url,omitempty"`
-	Icon        string    `json:"icon,omitempty"`
-	Levels      []float64 `json:"levels,omitempty"`
+	Song        *Song           `json:"song,omitempty"`
+	IsPlaying   bool            `json:"is_playing"`
+	Progress    spotify.Numeric `json:"progress,omitempty"`
+	PlaylistUrl string          `json:"playlist_url,omitempty"`
+	Icon        string          `json:"icon,omitempty"`
+	Levels      []float64       `json:"levels,omitempty"`
 }
 
 type AudioAnalysis struct {
