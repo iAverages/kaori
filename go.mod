@@ -1,11 +1,13 @@
 module kaori
 
-go 1.20
+go 1.22
+
+toolchain go1.23.4
 
 require (
 	github.com/redis/go-redis/v9 v9.0.5
 	github.com/spf13/viper v1.18.2
-	github.com/uptrace/bunrouter v1.0.20
+	github.com/uptrace/bunrouter v1.0.22
 	github.com/zmb3/spotify/v2 v2.4.2
 	go.step.sm/crypto v0.32.3
 	go.uber.org/zap v1.24.0
