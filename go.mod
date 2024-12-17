@@ -3,7 +3,7 @@ module kaori
 go 1.20
 
 require (
-	github.com/redis/go-redis/v9 v9.0.5
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/spf13/viper v1.18.2
 	github.com/uptrace/bunrouter v1.0.20
 	github.com/zmb3/spotify/v2 v2.4.2
