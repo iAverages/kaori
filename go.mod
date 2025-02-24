@@ -1,6 +1,8 @@
 module kaori
 
-go 1.20
+go 1.23.0
+
+toolchain go1.24.0
 
 require (
 	github.com/redis/go-redis/v9 v9.0.5
@@ -9,7 +11,7 @@ require (
 	github.com/zmb3/spotify/v2 v2.4.2
 	go.step.sm/crypto v0.32.3
 	go.uber.org/zap v1.24.0
-	golang.org/x/oauth2 v0.15.0
+	golang.org/x/oauth2 v0.27.0
 )
 
 require (
